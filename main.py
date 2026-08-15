@@ -30,11 +30,28 @@ products = [
     Product(id=3, name="Product 3", price=30.0, description="Description of Product 3", quantity=300)
 ]
 
+def init_db():
+    # Create a new database session
+    db = SessionLocal()
+    try:
+        # this gives count of how many times the product is present in the database. if it is 0 then we will add the products to the database. if it is not 0 then we will not add the products to the database.
+        count = db.query(database_models.Product).count()
+
+        if count == 0:
+            for product in products:
+                 # no need to write sql queries, just say add, make sure to add product of database models and not of pydantic models, and need to convert the pydantic object using model dump which will give us a dictionary and then unpack it using ** which will give us the values of the dictionary and then pass it to the Product class of database models which will create a new instance of the Product class and then add it to the database session.
+                db.add(database_models.Product(**product.model_dump()))
+
+            db.commit()
+    finally:
+        db.close()
+
+init_db()
 
 @app.get("/products")
 def get_products():
     # u need to have a database connection and query the database to get the products. for now we are just returning the products list.
-    db = SessionLocal()
+    # db = SessionLocal()
     return products #u call the instance
 
 # this is the endpoint to get a product by its id. The product_id is passed as a path parameter in the URL. The product_id is an integer. The function get_product takes the product_id as an argument and returns the product with the given id.
