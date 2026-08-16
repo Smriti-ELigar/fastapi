@@ -3,10 +3,11 @@
 # so we will create a object for session which will be used in the main.py file to connect to the database. 
 # sessionmaker is a factory/class for creating new Session objects. The sessionmaker function takes the engine as an argument and returns a new Session object. The Session object is used to interact with the database. The Session object is used to create, read, update, and delete records in the database.
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
+from .exceptions import DatabaseConnectionError
 
 load_dotenv()
 db_url = os.getenv("db_url")
@@ -14,3 +15,16 @@ db_url = os.getenv("db_url")
 # engine is the one that tells which db we connecting to and how we connecting to.
 engine = create_engine(db_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def check_database_health():
+    db = SessionLocal()
+    try:
+        # Try to execute a simple query to verify connection. will return 1 i.e true. 
+        # "I am giving you a raw SQL statement. Treat this string as SQL."
+        db.execute(text("SELECT 1"))
+        return True
+    except Exception as e:
+        raise DatabaseConnectionError(f"Database connection error: {str(e)}") #message is passed to the DatabaseConnectionError class which is defined in the exceptions.py file. this class inherits from the built-in Exception class and is used to indicate that a database connection error has occurred. the message is passed to the parent Exception class which is used to display the error message.
+    finally:
+        db.close()

@@ -1,22 +1,83 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 # from models import Product
 from pydantic_models import Product
 import database_models
-from database import SessionLocal, engine
+from database import SessionLocal, engine, check_database_health
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
+from exceptions import ProductNotFoundError, InvalidProductDataError, ValidationError, DatabaseConnectionError
 
 
-app = FastAPI()
+app = FastAPI(title="Product Management API", description="FastAPI application")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
+# ============== EXCEPTION HANDLERS ==============
+#"Whenever a ProductNotFoundError is raised anywhere in my application, call this function."
+@app.exception_handler(ProductNotFoundError)
+async def product_not_found_handler(request: Request, exc: ProductNotFoundError):
+    return JSONResponse(
+        status_code=404,
+        content={
+            "detail": exc.message,
+            "error_code": "PRODUCT_NOT_FOUND",
+            "product_id": exc.product_id
+        }
+    )
+
+
+@app.exception_handler(InvalidProductDataError)
+async def invalid_product_data_handler(request: Request, exc: InvalidProductDataError):
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": exc.message,
+            "error_code": "INVALID_PRODUCT_DATA"
+        }
+    )
+
+
+@app.exception_handler(ValidationError)
+async def validation_error_handler(request: Request, exc: ValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.message,
+            "error_code": "VALIDATION_ERROR",
+            "errors": exc.errors
+        }
+    )
+
+
+@app.exception_handler(DatabaseConnectionError)
+async def database_error_handler(request: Request, exc: DatabaseConnectionError):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": exc.message,
+            "error_code": "DATABASE_ERROR"
+        }
+    )
+
+
+# ============== DATABASE SETUP ==============
 # we need to tell sqlalc that it is responsible for creating the tables in the database. so we will import the Base class from database_models.py and call the create_all() method on it. this will create the tables in the database. we will pass the engine object to the create_all() method. this will tell sqlalc which db to create the tables in.
 # so this base class not only used for inheritance in the database_models.py but to get the metadata (id, name etc) and use that to create the tables in the database. so we will call the create_all() method on the metadata of the base class and pass the engine object to it. this will create the tables in the database.
 database_models.Base.metadata.create_all(bind=engine)
 
-@app.get("/")
+@app.get("/", tags=["health"])
 def greet():
-    return ("uu cann doo itt bitchhh")
+    return {"message": "API is running"}
+
+@app.get("/health", tags=["health"])
+def health_check():
+    check_database_health()
+    return {
+        "status": "healthy",
+        "message": "API and database are operational"
+    }
 
 #database isnt up yet. so to actually fetch the products, the products are only not there. so for now we'll just ceate a dictonary by specifying the values.
 #or better way to do it is by creating a file called products.py or models.py.
@@ -37,7 +98,7 @@ products = [
 def get_db():
     db = SessionLocal()
     try:
-        yield db
+        yield db  # Provides the session to the endpoint
     finally:
         db.close()
 
@@ -59,21 +120,24 @@ def init_db():
 
 init_db()
 
-@app.get("/products")
+@app.get("/products", tags=["products"])
 def get_all_products(db: Session = Depends(get_db)): # injecting the dependency here.
     return db.query(database_models.Product).all() # session is opened before, now we are querying the database to get all the products and returning it as a response. the session will be closed after the function is executed.
 
 # this is the endpoint to get a product by its id. The product_id is passed as a path parameter in the URL. The product_id is an integer. The function get_product takes the product_id as an argument and returns the product with the given id.
 # this is a decorator that tells FastAPI that this function is a GET request and the URL path is /products/{product_id}. 
-@app.get("/products/{product_id}")
+@app.get("/products/{product_id}", tags=["products"])
 def get_product(product_id: int, db: Session = Depends(get_db)):
+    if product_id <= 0:
+        raise ValidationError("Product ID must be a positive integer")
+    
     db_product = db.query(database_models.Product).filter(database_models.Product.id == product_id).first()
-    if db_product:
-        return db_product
-    return "Product not found"
+    if not db_product:
+        raise ProductNotFoundError(product_id)
+    return db_product
 
 # this is the endpoint to create a new product.we are creating a method called create_product of type post. from client side the product details need to be sent in the request body in JSON format. The product is of type Product which is a pydantic model. The product is appended to the products list and returned as a response.
-@app.post("/products")
+@app.post("/products", tags=["products"])
 def add_product(product: Product, db: Session = Depends(get_db)): #the product: Product is from pydantic so need to convert into database_model product.
     db.add(database_models.Product(**product.model_dump()))
     db.commit()
@@ -90,27 +154,34 @@ def add_product(product: Product, db: Session = Depends(get_db)): #the product: 
 #             return updated_product
 #     return {"error": "Product not found"}
 
-@app.put("/products/{product_id}")
+@app.put("/products/{product_id}", tags=["products"])
 def update_product(product_id: int, updated_product: Product, db: Session = Depends(get_db)):
-    db_product = db.query(database_models.Product).filter(database_models.Product.id == product_id).first() # to check if the product exists
-    if db_product:
-        db_product.name = updated_product.name
-        db_product.price = updated_product.price
-        db_product.description = updated_product.description
-        db_product.quantity = updated_product.quantity   
-        db.commit()
-    else:
-        return "no product found"
+    if product_id <= 0:
+        raise ValidationError("Product ID must be a positive integer")
+    
+    db_product = db.query(database_models.Product).filter(database_models.Product.id == product_id).first() # to check if product with the given id is present in the database or not. if it is not present then we will raise a ProductNotFoundError exception. if it is present then we will update the product details in the database.
+    if not db_product:
+        raise ProductNotFoundError(product_id)
+    
+    db_product.name = updated_product.name
+    db_product.price = updated_product.price
+    db_product.description = updated_product.description
+    db_product.quantity = updated_product.quantity   
+    db.commit()
+    return db_product
 
-@app.delete("/products/{product_id}")
+@app.delete("/products/{product_id}", tags=["products"])
 def delete_product(product_id: int, db: Session = Depends(get_db)):
-    db_product = db.query(database_models.Product).filter(database_models.Product.id == product_id).first() # to check if the product exists
-    if db_product:
-        db.delete(db_product)
-        db.commit()
-        return "Product deleted successfully"
-    else:
-        return "Product not found"
+    if product_id <= 0:
+        raise ValidationError("Product ID must be a positive integer")
+    
+    db_product = db.query(database_models.Product).filter(database_models.Product.id == product_id).first()
+    if not db_product:
+        raise ProductNotFoundError(product_id)
+    
+    db.delete(db_product)
+    db.commit()
+    return {"message": "Product deleted successfully", "id": product_id}
 
 # @app.delete("/products/{product_id}")
 # # when thinking of what arguements to use, think which attributes are required to delete a product. The product_id is required to delete a product. The product_id is passed as a path parameter in the URL. The function delete_product takes the product_id as an argument and deletes the product with the given id.
