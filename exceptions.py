@@ -8,7 +8,7 @@ class ProductNotFoundError(Exception):
 #This allows Python's normal exception machinery to know what message belongs to your exception.
 
 class InvalidProductDataError(Exception):
-    def __init__(self, message: str = "Invalid product data provided, http status code 400"):
+    def __init__(self, message: str = "Invalid product data provided, http status code 400"): #"When someone creates an InvalidProductDataError, they may give me a message. If they don't, I'll use this default message."
         self.message = message
         super().__init__(self.message)
 

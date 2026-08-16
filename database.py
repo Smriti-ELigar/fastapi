@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
-from .exceptions import DatabaseConnectionError
+from exceptions import DatabaseConnectionError
 
 load_dotenv()
 db_url = os.getenv("db_url")
