@@ -8,7 +8,13 @@ from database import SessionLocal, engine, check_database_health
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from exceptions import ProductNotFoundError, InvalidProductDataError, ValidationError, DatabaseConnectionError
+import logging
+from config import settings
+from log_manager import LoggingConfig
+from logging.config import dictConfig
 
+dictConfig(LoggingConfig.get_log_config())
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Product Management API", description="FastAPI application")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -18,6 +24,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 #"Whenever a ProductNotFoundError is raised anywhere in my application, call this function."
 @app.exception_handler(ProductNotFoundError)
 async def product_not_found_handler(request: Request, exc: ProductNotFoundError):
+    logger.warning(f"Product with ID {exc.product_id} not found.")
     return JSONResponse(
         status_code=404,
         content={
@@ -30,6 +37,7 @@ async def product_not_found_handler(request: Request, exc: ProductNotFoundError)
 
 @app.exception_handler(InvalidProductDataError)
 async def invalid_product_data_handler(request: Request, exc: InvalidProductDataError):
+    logger.error(f"Invalid product data provided: {exc.message}")
     return JSONResponse(
         status_code=400,
         content={
@@ -41,6 +49,7 @@ async def invalid_product_data_handler(request: Request, exc: InvalidProductData
 
 @app.exception_handler(ValidationError)
 async def validation_error_handler(request: Request, exc: ValidationError):
+    logger.warning(f"Validation error occurred: {exc.message}")
     return JSONResponse(
         status_code=422,
         content={
@@ -53,6 +62,7 @@ async def validation_error_handler(request: Request, exc: ValidationError):
 
 @app.exception_handler(DatabaseConnectionError)
 async def database_error_handler(request: Request, exc: DatabaseConnectionError):
+    logger.error(f"Database connection error: {exc.message}")
     return JSONResponse(
         status_code=503,
         content={
@@ -110,11 +120,13 @@ def init_db():
         count = db.query(database_models.Product).count()
 
         if count == 0:
+            logger.info("Initializing database with sample products...")
             for product in products:
                  # no need to write sql queries, just say add, make sure to add product of database models and not of pydantic models, and need to convert the pydantic object using model dump which will give us a dictionary and then unpack it using ** which will give us the values of the dictionary and then pass it to the Product class of database models which will create a new instance of the Product class and then add it to the database session.
                 db.add(database_models.Product(**product.model_dump()))
 
             db.commit()
+            logger.info("Database initialized with sample products.")
     finally:
         db.close()
 
@@ -139,6 +151,7 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 # this is the endpoint to create a new product.we are creating a method called create_product of type post. from client side the product details need to be sent in the request body in JSON format. The product is of type Product which is a pydantic model. The product is appended to the products list and returned as a response.
 @app.post("/products", tags=["products"])
 def add_product(product: Product, db: Session = Depends(get_db)): #the product: Product is from pydantic so need to convert into database_model product.
+    logger.info(f"Adding new product: {product.name}")
     db.add(database_models.Product(**product.model_dump()))
     db.commit()
     return product
@@ -168,6 +181,7 @@ def update_product(product_id: int, updated_product: Product, db: Session = Depe
     db_product.description = updated_product.description
     db_product.quantity = updated_product.quantity   
     db.commit()
+    logger.info(f"Product with ID {product_id} updated successfully.")
     return db_product
 
 @app.delete("/products/{product_id}", tags=["products"])
@@ -181,6 +195,7 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
     
     db.delete(db_product)
     db.commit()
+    logger.info(f"Product with ID {product_id} deleted successfully.")
     return {"message": "Product deleted successfully", "id": product_id}
 
 # @app.delete("/products/{product_id}")

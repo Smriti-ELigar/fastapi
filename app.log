@@ -1,0 +1,6 @@
+2026-08-19 17:10:02,275 - WARNING - main.py - product_not_found_handler - Line:  27: Product with ID 99 not found.
+2026-08-19 17:10:02,276 :: 127.0.0.1:52847 - INFO - "GET /products/99 HTTP/1.1" 404 Not Found
+2026-08-19 17:10:36,339 :: 127.0.0.1:51911 - INFO - "GET /docs HTTP/1.1" 200 OK
+2026-08-19 17:10:36,564 :: 127.0.0.1:51911 - INFO - "GET /openapi.json HTTP/1.1" 200 OK
+2026-08-19 17:11:00,299 - INFO - main.py - add_product - Line:  154: Adding new product: hehehe
+2026-08-19 17:11:00,343 :: 127.0.0.1:49339 - INFO - "POST /products HTTP/1.1" 200 OK
